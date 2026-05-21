@@ -1,0 +1,32 @@
+[package]
+name = "vaultaris-sdk-nodejs"
+version = "0.1.0"
+edition = "2024"
+description = "Vaultaris SDK for Node.js - Native bindings using napi-rs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RustLangES/vaultaris"
+keywords = ["iam", "oauth2", "nodejs", "napi"]
+categories = ["authentication", "api-bindings"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# NAPI-RS bindings
+napi = { version = "3", features = ["async", "serde-json"] }
+napi-derive = "3"
+
+# HTTP client
+reqwest.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Shared DPoP helper — reuses the same ES256 signing code as the Rust SDK.
+# `async` is required because some sibling modules in the SDK reference
+# reqwest unconditionally; we only use the `DpopKey` re-export.
+vaultaris-sdk = { path = "../vaultaris-sdk", default-features = false, features = ["dpop", "async"] }
+
+[build-dependencies]
+napi-build = "2"

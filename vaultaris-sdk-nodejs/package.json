@@ -1,0 +1,55 @@
+{
+    "name": "@vaultaris/sdk",
+    "version": "0.1.0",
+    "description": "Vaultaris SDK for Node.js - Native bindings for Vaultaris IAM platform",
+    "main": "index.js",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/RustLangES/vaultaris"
+    },
+    "license": "MIT OR Apache-2.0",
+    "keywords": [
+        "iam",
+        "oauth2",
+        "oidc",
+        "authentication",
+        "authorization",
+        "identity",
+        "access-management"
+    ],
+    "napi": {
+        "targets": [
+            "x86_64-unknown-linux-musl",
+            "aarch64-unknown-linux-gnu",
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-musl",
+            "aarch64-linux-android",
+            "aarch64-pc-windows-msvc",
+            "armv7-unknown-linux-gnueabihf",
+            "x86_64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-gnu",
+            "x86_64-unknown-freebsd",
+            "i686-pc-windows-msvc",
+            "armv7-linux-androideabi"
+        ]
+    },
+    "engines": {
+        "node": ">= 16"
+    },
+    "scripts": {
+        "artifacts": "napi artifacts",
+        "build": "napi build --platform --release",
+        "build:debug": "napi build --platform",
+        "prepublishOnly": "napi prepublish -t npm",
+        "test": "node test.js"
+    },
+    "devDependencies": {
+        "@napi-rs/cli": "^3.5.0"
+    },
+    "files": [
+        "index.js",
+        "index.d.ts"
+    ]
+}

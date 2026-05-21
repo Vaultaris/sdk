@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Rust SDK ──────────────────────────────────────────────
+  rust-sdk:
+    name: Rust SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p vaultaris-sdk --all-features
+
+      - name: Test
+        run: cargo test -p vaultaris-sdk --all-features
+
+      - name: Formatting
+        run: cargo fmt -p vaultaris-sdk -- --check
+
+      - name: Clippy
+        run: cargo clippy -p vaultaris-sdk --all-features -- -D warnings
+
+  # ── Python bindings ──────────────────────────────────────
+  python-sdk:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build Python wheel
+        working-directory: vaultaris-sdk
+        run: maturin build --features python
+
+  # ── Node.js SDK (napi-rs) ────────────────────────────────
+  nodejs-sdk:
+    name: Node.js SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        working-directory: vaultaris-sdk-nodejs
+        run: npm install
+
+      - name: Build
+        working-directory: vaultaris-sdk-nodejs
+        run: npm run build
+
+  # ── Web SDK (TypeScript) ─────────────────────────────────
+  web-sdk:
+    name: Web SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: vaultaris-sdk-web
+        run: npm install
+
+      - name: Lint
+        working-directory: vaultaris-sdk-web
+        run: npm run lint
+
+      - name: Test
+        working-directory: vaultaris-sdk-web
+        run: npm test
+
+      - name: Build
+        working-directory: vaultaris-sdk-web
+        run: npm run build

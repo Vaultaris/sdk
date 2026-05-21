@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+module-name = "vaultaris"
+
+bindings = "pyo3"
+profile = "release"
+features = ["python"]
+all-features = false
+no-default-features = false
+manifest-path = "Cargo.toml"
+# Python packages to include
+python-packages = []

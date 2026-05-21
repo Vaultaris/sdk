@@ -1,0 +1,50 @@
+{
+  "name": "@vaultaris/sdk-web",
+  "version": "0.1.0",
+  "description": "Vaultaris browser SDK — fetch-based client with transparent DPoP (RFC 9449) using WebCrypto and non-extractable keys",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RustLangES/vaultaris"
+  },
+  "keywords": [
+    "iam",
+    "oauth2",
+    "oidc",
+    "dpop",
+    "rfc9449",
+    "webcrypto",
+    "browser"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "fake-indexeddb": "^6.0.0"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  }
+}
