@@ -77,11 +77,30 @@ describe('VaultarisClient', () => {
     expect(typeof claims.jti).toBe('string');
   });
 
-  it('falls back to Bearer when no DPoP signer is configured', async () => {
+  it('defaults to ApiKey scheme when no DPoP signer is configured', async () => {
+    const recorded: RecordedRequest[] = [];
+    const client = new VaultarisClient({
+      baseUrl: 'https://auth.example.com',
+      apiKey: 'vk_live_abc',
+      fetch: mockFetch(
+        { valid: true, scopes: [], roles: [], permissions: [] },
+        recorded,
+      ),
+    });
+
+    await client.validateToken('opaque');
+
+    const req = recorded[0]!;
+    expect(req.headers.get('Authorization')).toBe('ApiKey vk_live_abc');
+    expect(req.headers.get('DPoP')).toBeNull();
+  });
+
+  it('Bearer scheme is opt-in for OAuth access tokens', async () => {
     const recorded: RecordedRequest[] = [];
     const client = new VaultarisClient({
       baseUrl: 'https://auth.example.com',
       apiKey: 'eyJ.abc',
+      authScheme: 'Bearer',
       fetch: mockFetch(
         { valid: true, scopes: [], roles: [], permissions: [] },
         recorded,
@@ -92,7 +111,6 @@ describe('VaultarisClient', () => {
 
     const req = recorded[0]!;
     expect(req.headers.get('Authorization')).toBe('Bearer eyJ.abc');
-    expect(req.headers.get('DPoP')).toBeNull();
   });
 
   it('signs every request, not just the first', async () => {
