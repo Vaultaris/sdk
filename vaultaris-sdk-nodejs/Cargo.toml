@@ -16,16 +16,15 @@ crate-type = ["cdylib"]
 napi = { version = "3", features = ["async", "serde-json"] }
 napi-derive = "3"
 
-# HTTP client
-reqwest.workspace = true
-
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
 
-# Shared DPoP helper — reuses the same ES256 signing code as the Rust SDK.
-# `async` is required because some sibling modules in the SDK reference
-# reqwest unconditionally; we only use the `DpopKey` re-export.
+# UUID parsing — JS side passes IDs as strings; the Rust SDK takes Uuid.
+uuid.workspace = true
+
+# Wrap the canonical Rust SDK so we inherit endpoint routes, auth scheme,
+# DPoP handling, and response envelope unwrapping for free.
 vaultaris-sdk = { path = "../vaultaris-sdk", default-features = false, features = ["dpop", "async"] }
 
 [build-dependencies]

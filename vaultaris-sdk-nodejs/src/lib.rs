@@ -394,3 +394,40 @@ pub struct BootstrapResult {
 pub struct SetupStatus {
     pub requires_setup: bool,
 }
+
+// ============================================
+// API KEYS
+// ============================================
+
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateApiKeyInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub scopes: Option<Vec<String>>,
+    pub ip_restrictions: Option<Vec<String>>,
+}
+
+/// Plain-text secret is shown only on creation — copy it then.
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyWithSecret {
+    pub api_key_id: String,
+    pub name: String,
+    pub prefix: String,
+    pub secret: String,
+}
+
+// ============================================
+// OAUTH TOKEN
+// ============================================
+
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+    pub refresh_token: Option<String>,
+    pub scope: String,
+}
