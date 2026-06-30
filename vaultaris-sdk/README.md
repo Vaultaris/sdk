@@ -1,23 +1,17 @@
 # Vaultaris SDK
 
-Rust client library for integrating applications with Vaultaris IAM platform.
-
-## Overview
-
-The Vaultaris SDK provides a simple, type-safe way to integrate your applications with Vaultaris Identity and Access Management. It supports token validation, permission checking, session management, and user information retrieval.
+Rust client library for integrating applications with the Vaultaris IAM platform.
 
 ## Features
 
-- ✅ **Token Validation** - Validate access tokens and get user information
-- ✅ **Permission Checking** - Check single or batch permissions
-- ✅ **Session Management** - Validate and manage user sessions
-- ✅ **User Information** - Retrieve user details and attributes
-- ✅ **Async/Await** - Built on Tokio for async operations
-- ✅ **Python Bindings** - Use from Python via PyO3
+- **API-key auth (default)** — matches the server's `Authorization: ApiKey` extractor.
+- **OAuth/Bearer auth** — opt-in for OAuth-issued access tokens.
+- **DPoP (RFC 9449)** — sender-constrained tokens, every request signed with ES256.
+- **Tenants, users, roles, permissions, groups, OAuth clients, sessions, ABAC policies, audit, identity providers, MFA (TOTP + WebAuthn), API keys, applications, statistics** — full coverage of the v1 API.
+- **Typestate OAuth flows** — auth-code + PKCE, password, client-credentials, refresh.
+- **High-level workflows** — `setup_if_needed`, `provision_user`, `bootstrap_tenant`, `setup_rbac`.
 
 ## Installation
-
-Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -25,251 +19,113 @@ vaultaris-sdk = "0.1"
 tokio = { version = "1", features = ["full"] }
 ```
 
-For Python bindings:
-
-```bash
-pip install vaultaris-sdk
-```
-
-## Quick Start
-
-### Rust
+## Quick start
 
 ```rust
 use vaultaris_sdk::{VaultarisClient, VaultarisConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), vaultaris_sdk::Error> {
-    // Create configuration
-    let config = VaultarisConfig::new("http://localhost:8080")
-        .with_api_key("your-api-key");
+    let config = VaultarisConfig::new("https://auth.example.com")
+        .with_api_key("vk_live_...");
+    let client = VaultarisClient::try_from(config)?;
 
-    // Create client
-    let client = VaultarisClient::new(config)?;
-
-    // Validate a token
-    let validation = client.validate_token("user-access-token").await?;
-    if validation.valid {
-        println!("User: {}", validation.username.unwrap_or_default());
-        println!("Roles: {:?}", validation.roles);
-    }
-
-    // Check a permission
-    let allowed = client
-        .check_permission("tenant-id", "user-id", "orders", "create")
-        .await?;
-    
-    if allowed {
-        println!("User can create orders!");
+    let v = client.validate_token("user-token").await?;
+    if v.valid {
+        println!("user: {}", v.username.unwrap_or_default());
     }
 
     Ok(())
 }
 ```
 
-### Python
-
-```python
-from vaultaris_sdk import VaultarisClient
-
-# Create client
-client = VaultarisClient(
-    base_url="http://localhost:8080",
-    api_key="your-api-key"
-)
-
-# Validate token
-result = client.validate_token("user-token")
-if result.valid:
-    print(f"User: {result.username}")
-    print(f"Roles: {result.roles}")
-
-# Check permission
-allowed = client.check_permission(
-    tenant_id="tenant-id",
-    user_id="user-id", 
-    resource="orders",
-    action="create"
-)
-
-if allowed:
-    print("Permission granted!")
-```
-
-## API Reference
-
-### VaultarisConfig
+## Auth schemes
 
 ```rust
-// Create configuration
-let config = VaultarisConfig::new("http://localhost:8080")
-    .with_api_key("your-api-key")        // API key authentication
-    .with_timeout(Duration::from_secs(30)); // Request timeout
+use vaultaris_sdk::{AuthScheme, VaultarisConfig};
+
+// Default — Vaultaris API keys
+VaultarisConfig::new("https://auth.example.com")
+    .with_api_key("vk_live_...");
+
+// OAuth access token — opt-in
+VaultarisConfig::new("https://auth.example.com")
+    .with_api_key("eyJ...")
+    .with_auth_scheme(AuthScheme::Bearer);
 ```
 
-### VaultarisClient
+With the `dpop` feature and a configured signer, the scheme is forced to `DPoP` per RFC 9449 §7.1.
 
-#### validate_token
+## Environment variables
 
-Validates an access token and returns user information.
+`VaultarisClient::from_env()` reads:
+
+| Variable | Purpose |
+|---|---|
+| `VAULTARIS_URL` | Base URL |
+| `VAULTARIS_API_KEY` | API key or token |
+| `VAULTARIS_CLIENT_ID` / `VAULTARIS_CLIENT_SECRET` | OAuth client credentials |
+| `VAULTARIS_TENANT_ID` | Default tenant (informational) |
+| `VAULTARIS_TIMEOUT` | Per-request timeout (seconds) |
+| `VAULTARIS_VERIFY_TLS` | `"false"` to disable TLS verification |
+| `VAULTARIS_AUTH_SCHEME` | `"apikey"` (default) or `"bearer"` |
+
+## Endpoint coverage
+
+| Resource | Methods |
+|---|---|
+| Tenants | `list_tenants`, `create_tenant`, `get_tenant`, `update_tenant`, `delete_tenant` |
+| Users | `list_users`, `create_user`, `get_user`, `update_user`, `delete_user`, `restore_user`, `user_roles`, `assign_role_to_user`, `remove_role_from_user`, `user_groups`, `assign_group_to_user`, `remove_group_from_user` |
+| Roles | `list_roles`, `create_role`, `get_role`, `update_role`, `delete_role`, `restore_role`, `role_permissions`, `assign_permission_to_role`, `remove_permission_from_role` |
+| Permissions | `list_permissions`, `create_permission`, `get_permission`, `update_permission`, `delete_permission`, `restore_permission` |
+| Groups | `list_groups`, `create_group`, `get_group`, `update_group`, `delete_group`, `restore_group`, `group_members`, `group_roles`, `assign_role_to_group`, `remove_role_from_group` |
+| OAuth clients | `list_clients`, `create_client`, `get_client`, `update_client`, `delete_client`, `regenerate_client_secret` |
+| Applications | `list_applications`, `create_application`, `get_application`, `update_application`, `delete_application`, link/unlink (oauth-clients, roles, groups, permissions, policies), members |
+| Sessions | `list_sessions`, `revoke_session`, `user_sessions`, `revoke_user_sessions` |
+| Policies (ABAC) | `list_policies`, `create_policy`, `get_policy`, `update_policy`, `delete_policy`, `evaluate_policies`, `check_user_access` |
+| Audit | `list_audit_logs`, `get_audit_log` |
+| Identity providers | `list_identity_providers`, `create_identity_provider`, `get_identity_provider`, `update_identity_provider`, `delete_identity_provider` |
+| JWT keys | `list_keys`, `rotate_keys` |
+| MFA | TOTP setup/verify/disable, WebAuthn registration + authentication, credentials |
+| Devices | `list_devices`, `revoke_device`, `trust_device`, `device_sessions` |
+| Templates | `export_template`, `import_template` |
+| Statistics | `tenant_overview`, `auth_stats`, `session_stats`, `security_stats`, `dashboard_summary` |
+| API keys | `list_api_keys`, `create_api_key`, `get_api_key`, `update_api_key`, `delete_api_key`, `revoke_api_key`, app/group-scoped variants, self-service (`current_api_key`, `authorize_api_key`) |
+| Auth | password reset, email verification |
+| OAuth tokens | `token_client_credentials`, `token_password`, `token_refresh` |
+| Integration | `validate_token`, `check_permission`, `batch_check_permissions`, `integration_user`, `validate_session` |
+
+See `examples/` for full walkthroughs.
+
+## OAuth flows (typestate)
 
 ```rust
-let validation = client.validate_token("token").await?;
-// validation.valid: bool
-// validation.user_id: Option<String>
-// validation.username: Option<String>
-// validation.email: Option<String>
-// validation.roles: Vec<String>
-// validation.expires_at: Option<DateTime>
-// validation.error: Option<String>
-```
+use vaultaris_sdk::oauth::OAuthFlow;
 
-#### check_permission
-
-Checks if a user has permission to perform an action.
-
-```rust
-let allowed = client
-    .check_permission("tenant-id", "user-id", "resource", "action")
+// Client credentials (machine-to-machine)
+let authed = OAuthFlow::new("https://auth.example.com", "svc-client", Some("s3cr3t"))
+    .client_credentials("read:metrics write:events")
     .await?;
+println!("{}", authed.access_token());
 ```
 
-#### check_permissions
+The typestate ensures invalid transitions (refreshing a `client_credentials` token, exchanging a code twice, etc.) are **compile errors**, not runtime panics.
 
-Batch check multiple permissions.
+## DPoP
+
+Enable the `dpop` feature (on by default) and pass a `DpopKey`:
 
 ```rust
-let permissions = vec![
-    ("orders", "read"),
-    ("orders", "create"),
-    ("users", "delete"),
-];
+use vaultaris_sdk::{DpopKey, VaultarisClient, VaultarisConfig};
 
-let results = client
-    .check_permissions("tenant-id", "user-id", permissions)
-    .await?;
-
-// results.all_allowed: bool
-// results.results: Vec<PermissionResult>
+let key = DpopKey::generate();
+let config = VaultarisConfig::new("https://auth.example.com")
+    .with_api_key("eyJ...")
+    .with_dpop_key(key);
+let client = VaultarisClient::try_from(config)?;
 ```
 
-#### validate_session
-
-Validates a session token.
-
-```rust
-let session = client.validate_session("session-token").await?;
-// session.valid: bool
-// session.user_id: Option<String>
-// session.expires_at: Option<DateTime>
-```
-
-#### get_user
-
-Gets detailed user information.
-
-```rust
-let user = client.get_user("tenant-id", "user-id").await?;
-// user.id: String
-// user.username: String
-// user.email: Option<String>
-// user.roles: Vec<String>
-// user.groups: Vec<String>
-// user.metadata: HashMap<String, Value>
-```
-
-## Middleware Integration
-
-### Axum Example
-
-```rust
-use axum::{
-    extract::State,
-    http::{Request, StatusCode},
-    middleware::{self, Next},
-    response::Response,
-    routing::get,
-    Router,
-};
-use vaultaris_sdk::VaultarisClient;
-
-async fn auth_middleware<B>(
-    State(client): State<VaultarisClient>,
-    request: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
-    let token = request
-        .headers()
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let validation = client
-        .validate_token(token)
-        .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
-
-    if !validation.valid {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    Ok(next.run(request).await)
-}
-
-#[tokio::main]
-async fn main() {
-    let client = VaultarisClient::new(
-        VaultarisConfig::new("http://localhost:8080")
-    ).unwrap();
-
-    let app = Router::new()
-        .route("/protected", get(protected_handler))
-        .layer(middleware::from_fn_with_state(client.clone(), auth_middleware))
-        .with_state(client);
-
-    // Start server...
-}
-
-async fn protected_handler() -> &'static str {
-    "Protected content"
-}
-```
-
-## Examples
-
-See the `examples/` directory for more examples:
-
-- **basic.rs** - Basic usage examples
-- **middleware.rs** - Web framework middleware integration
-- **python_usage.py** - Python SDK usage
-
-## Error Handling
-
-```rust
-use vaultaris_sdk::Error;
-
-match client.validate_token("token").await {
-    Ok(validation) => {
-        // Handle success
-    }
-    Err(Error::NetworkError(e)) => {
-        // Network/connection error
-    }
-    Err(Error::Unauthorized) => {
-        // Invalid API key
-    }
-    Err(Error::NotFound) => {
-        // Resource not found
-    }
-    Err(Error::ServerError(msg)) => {
-        // Server-side error
-    }
-    Err(e) => {
-        // Other errors
-    }
-}
-```
+For HSM/KMS/TPM-backed keys, implement [`DpopSigner`] and pass it via `with_dpop_signer`.
 
 ## License
 

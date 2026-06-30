@@ -78,15 +78,33 @@ The constructor takes a single config object:
 | Field | Required | Description |
 |---|---|---|
 | `baseUrl` | yes | `https://auth.example.com` |
-| `apiKey` | no | Access token to send. |
+| `apiKey` | no | Access token or API key to send. |
+| `authScheme` | no | `'ApiKey'` (default — matches Vaultaris API keys) or `'Bearer'` (OAuth access tokens). DPoP overrides both when configured. |
 | `dpopSigner` | no | A `DpopSigner` (typically a `DpopKey`). When set, every request gets a DPoP proof and switches the Authorization scheme to `DPoP`. |
 | `tenantId` | no | Default tenant for tenant-scoped calls. |
 | `timeoutMs` | no | Per-request timeout. Default 30 000. |
+| `deviceFingerprint` | no | Hex string, or `true` to auto-compute. Sent via `X-Device-Fingerprint`. |
 | `fetch` | no | Override `globalThis.fetch`; useful in tests. |
 
-Methods: `validateToken`, `checkPermission`, `getUserInfo`, plus
-`request(method, path, body?, query?)` if you want to route a custom
-endpoint through the same DPoP machinery.
+#### Methods
+
+| Group | Methods |
+|---|---|
+| Integration | `validateToken`, `checkPermission`, `batchCheckPermissions`, `getIntegrationUser`, `getUserInfo` |
+| Tenants | `listTenants`, `getTenant` |
+| Users | `listUsers`, `getUser`, `userRoles` |
+| Roles | `listRoles` |
+| Permissions | `listPermissions` |
+| Groups | `listGroups` |
+| API keys | `listApiKeys`, `createApiKey` (returns secret once), `revokeApiKey`, `deleteApiKey` |
+| Audit | `listAuditLogs` |
+| Statistics | `tenantOverview`, `authStats` |
+| OAuth token | `tokenClientCredentials` |
+| Escape hatch | `request(method, path, body?, query?)`, `formRequest(method, path, fields)` |
+
+## Default auth scheme
+
+`authScheme` defaults to `'ApiKey'` — matches the server's API-key extractor (`Authorization: ApiKey <token>` or `X-Api-Key`). Set to `'Bearer'` only when carrying OAuth-issued access tokens.
 
 ## Why not `Bearer`?
 
