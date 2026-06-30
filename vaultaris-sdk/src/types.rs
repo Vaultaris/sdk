@@ -8,7 +8,7 @@ use uuid::Uuid;
 // PAGINATION
 // ============================================
 
-/// Paginated response wrapper
+/// Paginated response wrapper.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page<T> {
     pub data: Vec<T>,
@@ -18,6 +18,7 @@ pub struct Page<T> {
 }
 
 impl<T> Page<T> {
+    #[must_use]
     pub fn total_pages(&self) -> i64 {
         if self.per_page == 0 {
             return 0;
@@ -25,12 +26,45 @@ impl<T> Page<T> {
         (self.total as f64 / self.per_page as f64).ceil() as i64
     }
 
+    #[must_use]
     pub fn has_next(&self) -> bool {
         self.page < self.total_pages()
     }
 
+    #[must_use]
     pub fn has_prev(&self) -> bool {
         self.page > 1
+    }
+}
+
+/// Pagination query parameters.
+///
+/// `page` is 1-based, matching the server's `Pagination` extractor.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Pagination {
+    pub page: u32,
+    pub per_page: u32,
+}
+
+impl Pagination {
+    #[must_use]
+    pub fn new(page: u32, per_page: u32) -> Self {
+        Self { page, per_page }
+    }
+
+    /// First page, 20 items.
+    #[must_use]
+    pub fn first() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            per_page: 20,
+        }
     }
 }
 
@@ -1371,4 +1405,296 @@ pub(crate) struct PasswordResetConfirmRequest {
 #[derive(Debug, Serialize)]
 pub(crate) struct EmailVerificationRequest {
     pub token: String,
+}
+
+// ============================================
+// STATISTICS QUERY
+// ============================================
+
+/// Time range + bucketing for statistics endpoints.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct StatsQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<DateTime<Utc>>,
+    /// `"hour"`, `"day"`, `"week"`, `"month"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval: Option<String>,
+}
+
+impl StatsQuery {
+    #[must_use]
+    pub fn last_24h() -> Self {
+        Self {
+            from: Some(Utc::now() - chrono::Duration::hours(24)),
+            to: Some(Utc::now()),
+            interval: Some("hour".to_string()),
+        }
+    }
+
+    #[must_use]
+    pub fn last_7d() -> Self {
+        Self {
+            from: Some(Utc::now() - chrono::Duration::days(7)),
+            to: Some(Utc::now()),
+            interval: Some("day".to_string()),
+        }
+    }
+
+    #[must_use]
+    pub fn last_30d() -> Self {
+        Self {
+            from: Some(Utc::now() - chrono::Duration::days(30)),
+            to: Some(Utc::now()),
+            interval: Some("day".to_string()),
+        }
+    }
+}
+
+// ============================================
+// API KEYS
+// ============================================
+
+/// Public API key metadata. The plain-text secret is never returned after
+/// creation — see [`ApiKeyWithSecret`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKey {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub owner_type: String,
+    pub owner_id: Uuid,
+    pub name: String,
+    pub prefix: String,
+    pub description: Option<String>,
+    pub scopes: Option<Vec<String>>,
+    pub ip_restrictions: Option<Vec<String>>,
+    pub conditions: Option<serde_json::Value>,
+    pub is_enabled: bool,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub use_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Returned by `create_api_key` — the plain-text `secret` is shown only here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyWithSecret {
+    pub api_key: ApiKey,
+    pub secret: String,
+}
+
+/// Request to create an API key.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CreateApiKeyRequest {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_restrictions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// Request to update an API key.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateApiKeyRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_restrictions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// `GET /api/v1/api-keys/me` — introspection of the calling key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyMe {
+    pub key_id: Uuid,
+    pub tenant_id: Uuid,
+    pub owner_type: String,
+    pub owner_id: Uuid,
+    pub scopes: Vec<String>,
+    pub roles: Vec<String>,
+    pub groups: Vec<String>,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyAuthorizeRequest {
+    pub resource: String,
+    pub action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyAuthorizeResult {
+    pub allowed: bool,
+    pub reason: Option<String>,
+}
+
+// ============================================
+// DEVICES
+// ============================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Device {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub tenant_id: Uuid,
+    pub fingerprint: String,
+    pub device_type: Option<String>,
+    pub os: Option<String>,
+    pub browser: Option<String>,
+    pub is_trusted: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub login_count: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+// ============================================
+// APPLICATIONS
+// ============================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Application {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub homepage_url: Option<String>,
+    pub primary_color: Option<String>,
+    pub redirect_uris_base: Vec<String>,
+    pub allowed_scopes: Vec<String>,
+    pub allowed_audiences: Vec<String>,
+    pub access_token_lifetime_seconds: Option<i32>,
+    pub refresh_token_lifetime_seconds: Option<i32>,
+    pub id_token_lifetime_seconds: Option<i32>,
+    pub is_active: bool,
+    pub isolation_enabled: bool,
+    pub settings: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CreateApplicationRequest {
+    pub slug: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_uris_base: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_audiences: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateApplicationRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_uris_base: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_audiences: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id_token_lifetime_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Value>,
+}
+
+/// Body for `POST .../applications/{app_id}/{resource}/link/{id}`.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LinkApplicationResourceRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_inherited: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AddApplicationMemberRequest {
+    pub user_id: Uuid,
+    /// `"owner" | "admin" | "member"`. Defaults to `"member"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_activate: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateApplicationMemberRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// `"pending" | "active" | "suspended"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplicationMember {
+    pub user_id: Uuid,
+    pub application_id: Uuid,
+    pub tenant_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub invited_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
 }

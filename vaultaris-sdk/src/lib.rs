@@ -1,57 +1,45 @@
-//! Vaultaris SDK - Client library for integrating with Vaultaris IAM
+//! Vaultaris SDK — client library for integrating with Vaultaris IAM.
 //!
-//! This library provides a simple and ergonomic way to integrate your applications
-//! with Vaultaris Identity and Access Management platform.
-//!
-//! # Features
-//!
-//! - **Token validation**: Validate access tokens issued by Vaultaris
-//! - **Permission checking**: Check if users have specific permissions
-//! - **Session management**: Validate and manage user sessions
-//! - **User information**: Retrieve user details and attributes
-//!
-//! # Quick Start
+//! # Quick start
 //!
 //! ```rust,no_run
 //! use vaultaris_sdk::{VaultarisClient, VaultarisConfig};
 //!
-//! #[tokio::main]
-//! async fn main() -> Result<(), vaultaris_sdk::Error> {
-//!     // Create a client
-//!     let config = VaultarisConfig::new("http://localhost:8080")
-//!         .with_api_key("your-api-key");
-//!     let client = VaultarisClient::new(config)?;
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), vaultaris_sdk::Error> {
+//! let config = VaultarisConfig::new("https://auth.example.com")
+//!     .with_api_key("vk_live_...");
+//! let client = VaultarisClient::try_from(config)?;
 //!
-//!     // Validate a token
-//!     let validation = client.validate_token("user-token").await?;
-//!     if validation.valid {
-//!         println!("User: {}", validation.username.unwrap_or_default());
-//!     }
-//!
-//!     // Check permissions
-//!     let allowed = client
-//!         .check_permission("tenant-id", "user-id", "orders", "create")
-//!         .await?;
-//!     if allowed {
-//!         println!("User can create orders!");
-//!     }
-//!
-//!     Ok(())
+//! let validation = client.validate_token("user-token").await?;
+//! if validation.valid {
+//!     println!("user: {}", validation.username.unwrap_or_default());
 //! }
+//! # Ok(()) }
 //! ```
 //!
-//! # Middleware Integration
+//! # Auth schemes
 //!
-//! The SDK can be used as middleware in web frameworks:
+//! The SDK speaks two schemes on the wire, selected by [`config::AuthScheme`]:
 //!
-//! ```rust,ignore
-//! use vaultaris_sdk::middleware::VaultarisAuth;
+//! - `ApiKey` (default) — `Authorization: ApiKey <token>`, matching the
+//!   server's API-key extractor.
+//! - `Bearer` — for OAuth-issued access tokens.
 //!
-//! // Axum example
-//! let app = Router::new()
-//!     .route("/protected", get(protected_handler))
-//!     .layer(VaultarisAuth::new(client));
-//! ```
+//! With the `dpop` feature and a configured signer, every request also
+//! carries a freshly-signed DPoP proof (RFC 9449).
+//!
+//! # Environment variables
+//!
+//! [`VaultarisClient::from_env`] reads:
+//!
+//! - `VAULTARIS_URL` — base URL
+//! - `VAULTARIS_API_KEY` — API key or token
+//! - `VAULTARIS_CLIENT_ID` / `VAULTARIS_CLIENT_SECRET` — OAuth client credentials
+//! - `VAULTARIS_TENANT_ID` — default tenant
+//! - `VAULTARIS_TIMEOUT` — per-request timeout (seconds)
+//! - `VAULTARIS_VERIFY_TLS` — `"false"` to disable
+//! - `VAULTARIS_AUTH_SCHEME` — `"apikey"` (default) or `"bearer"`
 
 pub mod client;
 pub mod config;
@@ -68,11 +56,8 @@ pub mod workflows;
 pub mod python;
 
 pub use client::VaultarisClient;
-pub use config::VaultarisConfig;
+pub use config::{AuthScheme, VaultarisConfig, VaultarisConfigBuilder};
 #[cfg(feature = "dpop")]
 pub use dpop::{DpopKey, DpopPublicJwk, DpopSigner};
-pub use error::Error;
+pub use error::{ApiErrorKind, Error, Result};
 pub use types::*;
-
-/// Result type alias for Vaultaris SDK operations
-pub type Result<T> = std::result::Result<T, Error>;

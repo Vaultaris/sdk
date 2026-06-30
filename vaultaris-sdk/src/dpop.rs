@@ -23,7 +23,7 @@
 //! let config = VaultarisConfig::new("https://auth.example.com")
 //!     .with_api_key("eyJ...")
 //!     .with_dpop_key(key);
-//! let client = VaultarisClient::new(config)?;
+//! let client = VaultarisClient::try_from(config)?;
 //! let _ = client.validate_token("...").await?;
 //! # Ok(()) }
 //! ```
@@ -60,7 +60,7 @@
 //! let config = VaultarisConfig::new("https://auth.example.com")
 //!     .with_api_key("eyJ...")
 //!     .with_dpop_signer(signer);
-//! let _ = VaultarisClient::new(config)?;
+//! let _ = VaultarisClient::try_from(config)?;
 //! # Ok(()) }
 //! ```
 
@@ -92,10 +92,7 @@ impl DpopPublicJwk {
     /// JSON serialisation suitable for the `jwk` header member.
     pub fn to_jwk_json(&self) -> String {
         match self {
-            Self::Ec { x, y } => format!(
-                r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#,
-                x, y
-            ),
+            Self::Ec { x, y } => format!(r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#, x, y),
             Self::Rsa { n, e } => format!(r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#, e, n),
         }
     }

@@ -321,14 +321,17 @@ impl OAuthFlow<Unauthenticated> {
         let body = res.text().await.map_err(Error::from)?;
 
         if status.is_success() {
-            serde_json::from_str::<TokenResponse>(&body).map_err(|e| Error::Json(e.to_string()))
+            serde_json::from_str::<TokenResponse>(&body).map_err(Error::from)
         } else {
             let err: OAuthErrorResponse =
                 serde_json::from_str(&body).unwrap_or(OAuthErrorResponse {
                     error: "unknown_error".into(),
                     error_description: Some(body),
                 });
-            Err(Error::Auth(err.error_description.unwrap_or(err.error)))
+            Err(Error::from_response(
+                status.as_u16(),
+                err.error_description.unwrap_or(err.error),
+            ))
         }
     }
 
@@ -364,7 +367,7 @@ impl OAuthFlow<PendingCode> {
         if returned_state == self.state.csrf_state {
             Ok(())
         } else {
-            Err(Error::Auth(
+            Err(Error::Config(
                 "CSRF state mismatch — possible CSRF attack".into(),
             ))
         }
@@ -398,14 +401,17 @@ impl OAuthFlow<PendingCode> {
         let body = res.text().await.map_err(Error::from)?;
 
         let token = if status.is_success() {
-            serde_json::from_str::<TokenResponse>(&body).map_err(|e| Error::Json(e.to_string()))?
+            serde_json::from_str::<TokenResponse>(&body).map_err(Error::from)?
         } else {
             let err: OAuthErrorResponse =
                 serde_json::from_str(&body).unwrap_or(OAuthErrorResponse {
                     error: "unknown_error".into(),
                     error_description: Some(body),
                 });
-            return Err(Error::Auth(err.error_description.unwrap_or(err.error)));
+            return Err(Error::from_response(
+                status.as_u16(),
+                err.error_description.unwrap_or(err.error),
+            ));
         };
 
         Ok(OAuthFlow {
@@ -488,15 +494,17 @@ impl OAuthFlow<Authenticated> {
         })
     }
 
-    /// Create a `VaultarisClient` pre-configured with this access token.
+    /// Build a `VaultarisClient` pre-configured with this access token using
+    /// the `Bearer` scheme (OAuth tokens).
     ///
-    /// Use the returned client to call Vaultaris resource APIs (`list_users`,
-    /// `check_permission`, etc.) on behalf of the authenticated user.
-    pub fn as_client(&self) -> crate::client::VaultarisClient {
-        let config =
-            VaultarisConfig::new(&self.base_url).with_api_key(self.state.access_token.clone());
-        crate::client::VaultarisClient::new(config)
-            .expect("VaultarisClient build failed — base_url was already validated")
+    /// # Errors
+    /// Returns the underlying construction error if the inner HTTP client
+    /// cannot be built (transport-only — the URL was already validated).
+    pub fn as_client(&self) -> Result<crate::client::VaultarisClient, Error> {
+        let config = VaultarisConfig::new(&self.base_url)
+            .with_api_key(self.state.access_token.clone())
+            .with_auth_scheme(crate::config::AuthScheme::Bearer);
+        crate::client::VaultarisClient::try_from(config)
     }
 
     /// Call `/oauth/userinfo` to retrieve the authenticated user's claims.
@@ -513,9 +521,9 @@ impl OAuthFlow<Authenticated> {
         let body = res.text().await.map_err(Error::from)?;
 
         if status.is_success() {
-            serde_json::from_str(&body).map_err(|e| Error::Json(e.to_string()))
+            serde_json::from_str(&body).map_err(Error::from)
         } else {
-            Err(Error::Auth(format!("userinfo failed: {}", body)))
+            Err(Error::from_response(status.as_u16(), body))
         }
     }
 
@@ -539,7 +547,7 @@ impl OAuthFlow<Authenticated> {
             .await?;
 
         let body = res.text().await.map_err(Error::from)?;
-        serde_json::from_str(&body).map_err(|e| Error::Json(e.to_string()))
+        serde_json::from_str(&body).map_err(Error::from)
     }
 
     /// Revoke the access token (and refresh token if present) at `/oauth/revoke`.
@@ -571,9 +579,10 @@ impl OAuthFlow<Authenticated> {
             .send()
             .await?;
 
-        if !res.status().is_success() {
+        let status = res.status();
+        if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            return Err(Error::Http(format!("revoke failed: {}", body)));
+            return Err(Error::from_response(status.as_u16(), body));
         }
 
         Ok(OAuthFlow {
@@ -625,14 +634,17 @@ impl OAuthFlow<Refreshable> {
         let body = res.text().await.map_err(Error::from)?;
 
         let token = if status.is_success() {
-            serde_json::from_str::<TokenResponse>(&body).map_err(|e| Error::Json(e.to_string()))?
+            serde_json::from_str::<TokenResponse>(&body).map_err(Error::from)?
         } else {
             let err: OAuthErrorResponse =
                 serde_json::from_str(&body).unwrap_or(OAuthErrorResponse {
                     error: "unknown_error".into(),
                     error_description: Some(body),
                 });
-            return Err(Error::Auth(err.error_description.unwrap_or(err.error)));
+            return Err(Error::from_response(
+                status.as_u16(),
+                err.error_description.unwrap_or(err.error),
+            ));
         };
 
         // Carry over the old refresh_token if the server didn't rotate it

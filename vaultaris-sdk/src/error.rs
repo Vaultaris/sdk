@@ -1,93 +1,153 @@
-//! SDK Error types
+//! SDK error types.
+//!
+//! Errors are typed per failure domain; callers can match on the variant
+//! to react to specific conditions (rate limiting, auth, validation, …)
+//! without parsing strings.
 
 use thiserror::Error;
 
-/// Error type for Vaultaris SDK operations
+/// Result alias used throughout the SDK.
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Top-level SDK error.
+///
+/// `Api`/`Transport`/`Codec` cover the three layers a request can fail at:
+/// the remote returned an HTTP error, the wire failed before it could, or the
+/// payload could not be (de)serialised. `Config` and `InvalidArgument` are
+/// caller-side mistakes — the SDK never produces them from the network.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// HTTP request failed
-    #[error("HTTP request failed: {0}")]
-    Http(String),
+    /// Remote returned a non-success HTTP status. `status` is the response
+    /// code; `message` is the server-supplied body (when present).
+    #[error("Vaultaris API error: HTTP {status}: {message}")]
+    Api {
+        status: u16,
+        kind: ApiErrorKind,
+        message: String,
+    },
 
-    /// Failed to parse JSON response
-    #[error("JSON parsing failed: {0}")]
-    Json(String),
-
-    /// Invalid configuration
-    #[error("Invalid configuration: {0}")]
-    Config(String),
-
-    /// Authentication failed
-    #[error("Authentication failed: {0}")]
-    Auth(String),
-
-    /// Permission denied
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-
-    /// Resource not found
-    #[error("Resource not found: {0}")]
-    NotFound(String),
-
-    /// Rate limit exceeded
-    #[error("Rate limit exceeded")]
+    /// Rate limit hit. Separated from `Api` because most callers retry
+    /// with backoff rather than surfacing the failure.
+    #[error("rate limit exceeded")]
     RateLimited,
 
-    /// Server error
-    #[error("Server error: {0}")]
-    Server(String),
+    /// Transport-layer failure (connect refused, TLS handshake, timeout).
+    #[cfg(feature = "async")]
+    #[error("HTTP transport error: {0}")]
+    Transport(#[from] reqwest::Error),
 
-    /// Network error
-    #[error("Network error: {0}")]
-    Network(String),
+    /// JSON encode/decode failed.
+    #[error("JSON codec error: {0}")]
+    Codec(#[from] serde_json::Error),
 
-    /// Token validation failed
-    #[error("Token validation failed: {0}")]
+    /// Configuration is malformed (empty base URL, unparseable URL, …).
+    #[error("invalid configuration: {0}")]
+    Config(String),
+
+    /// Caller passed an argument the SDK refuses (e.g. malformed UUID).
+    #[error("invalid argument `{name}`: {reason}")]
+    InvalidArgument { name: &'static str, reason: String },
+
+    /// URL parsing failed.
+    #[error("invalid URL: {0}")]
+    InvalidUrl(#[from] url::ParseError),
+
+    /// DPoP proof signing failed.
+    #[cfg(feature = "dpop")]
+    #[error("DPoP signing failed: {0}")]
+    Dpop(String),
+
+    /// Workflow helper rejected a permission check (caller-side, not a
+    /// server response).
+    #[error("permission denied: user {user_id} lacks {resource}:{action} on tenant {tenant_id}")]
+    PermissionDenied {
+        tenant_id: uuid::Uuid,
+        user_id: uuid::Uuid,
+        resource: String,
+        action: String,
+    },
+
+    /// Workflow helper considered a token invalid (missing claims or
+    /// `valid: false` response).
+    #[error("token invalid: {0}")]
     TokenInvalid(String),
-
-    /// Token expired
-    #[error("Token expired")]
-    TokenExpired,
-
-    /// Invalid URL
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(String),
 }
 
-#[cfg(feature = "async")]
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Self {
-        if err.is_timeout() {
-            Error::Network("Request timed out".to_string())
-        } else if err.is_connect() {
-            Error::Network("Failed to connect".to_string())
-        } else if err.is_status() {
-            match err.status() {
-                Some(status) if status.as_u16() == 401 => Error::Auth("Unauthorized".to_string()),
-                Some(status) if status.as_u16() == 403 => {
-                    Error::PermissionDenied("Forbidden".to_string())
-                }
-                Some(status) if status.as_u16() == 404 => Error::NotFound("Not found".to_string()),
-                Some(status) if status.as_u16() == 429 => Error::RateLimited,
-                Some(status) if status.as_u16() >= 500 => {
-                    Error::Server(format!("Server error: {}", status))
-                }
-                _ => Error::Http(err.to_string()),
-            }
-        } else {
-            Error::Http(err.to_string())
+/// Classification of an API failure derived from the response status.
+///
+/// Lets callers match on the *meaning* of an HTTP error without copying the
+/// status table around.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApiErrorKind {
+    Unauthorized,
+    Forbidden,
+    NotFound,
+    Conflict,
+    UnprocessableEntity,
+    BadRequest,
+    Server,
+    Other,
+}
+
+impl ApiErrorKind {
+    #[must_use]
+    pub fn from_status(status: u16) -> Self {
+        match status {
+            400 => Self::BadRequest,
+            401 => Self::Unauthorized,
+            403 => Self::Forbidden,
+            404 => Self::NotFound,
+            409 => Self::Conflict,
+            422 => Self::UnprocessableEntity,
+            500..=599 => Self::Server,
+            _ => Self::Other,
         }
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Error::Json(err.to_string())
+impl Error {
+    /// Build an `Api` variant from a status code and body.
+    #[must_use]
+    pub fn from_response(status: u16, body: String) -> Self {
+        if status == 429 {
+            return Self::RateLimited;
+        }
+        Self::Api {
+            status,
+            kind: ApiErrorKind::from_status(status),
+            message: body,
+        }
     }
-}
 
-impl From<url::ParseError> for Error {
-    fn from(err: url::ParseError) -> Self {
-        Error::InvalidUrl(err.to_string())
+    /// Build an invalid-argument error.
+    pub fn invalid_argument(name: &'static str, reason: impl Into<String>) -> Self {
+        Self::InvalidArgument {
+            name,
+            reason: reason.into(),
+        }
+    }
+
+    /// Shorthand: is the error a 401?
+    #[must_use]
+    pub fn is_unauthorized(&self) -> bool {
+        matches!(
+            self,
+            Self::Api {
+                kind: ApiErrorKind::Unauthorized,
+                ..
+            }
+        )
+    }
+
+    /// Shorthand: is the error a 404?
+    #[must_use]
+    pub fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::Api {
+                kind: ApiErrorKind::NotFound,
+                ..
+            }
+        )
     }
 }

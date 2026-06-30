@@ -67,7 +67,7 @@
 //! use vaultaris_sdk::{VaultarisClient, VaultarisConfig};
 //!
 //! # #[tokio::main] async fn main() -> Result<(), vaultaris_sdk::Error> {
-//! let client = VaultarisClient::new(
+//! let client = VaultarisClient::try_from(
 //!     VaultarisConfig::new("https://auth.example.com").with_api_key("bearer-token"),
 //! )?;
 //!
@@ -203,8 +203,7 @@ impl RegistrationFlow<RegistrationIdle> {
             return Err(parse_api_error(status, &body));
         }
 
-        let begin: RegistrationBeginResponse =
-            serde_json::from_str(&body).map_err(|e| Error::Json(e.to_string()))?;
+        let begin: RegistrationBeginResponse = serde_json::from_str(&body).map_err(Error::from)?;
 
         Ok(RegistrationFlow {
             base_url: self.base_url,
@@ -364,7 +363,7 @@ impl AuthenticationFlow<AuthenticationIdle> {
         }
 
         let begin: AuthenticationBeginResponse =
-            serde_json::from_str(&body).map_err(|e| Error::Json(e.to_string()))?;
+            serde_json::from_str(&body).map_err(Error::from)?;
 
         Ok(AuthenticationFlow {
             base_url: self.base_url,
@@ -471,7 +470,7 @@ impl crate::client::VaultarisClient {
     /// # use vaultaris_sdk::{VaultarisClient, VaultarisConfig};
     /// # use vaultaris_sdk::types::AttestationResponse;
     /// # #[tokio::main] async fn main() -> Result<(), vaultaris_sdk::Error> {
-    /// # let client = VaultarisClient::new(VaultarisConfig::new("http://localhost:8080").with_api_key("tok"))?;
+    /// # let client = VaultarisClient::try_from(VaultarisConfig::new("http://localhost:8080").with_api_key("tok"))?;
     /// let pending = client
     ///     .webauthn_registration("user-bearer-token")
     ///     .with_device_name("YubiKey 5C")
@@ -499,7 +498,7 @@ impl crate::client::VaultarisClient {
     /// # use vaultaris_sdk::{VaultarisClient, VaultarisConfig};
     /// # use vaultaris_sdk::types::AssertionResponse;
     /// # #[tokio::main] async fn main() -> Result<(), vaultaris_sdk::Error> {
-    /// # let client = VaultarisClient::new(VaultarisConfig::new("http://localhost:8080").with_api_key("tok"))?;
+    /// # let client = VaultarisClient::try_from(VaultarisConfig::new("http://localhost:8080").with_api_key("tok"))?;
     /// let pending = client.webauthn_authentication("user-bearer-token").begin().await?;
     ///
     /// // pass pending.options() to the browser …
@@ -529,20 +528,11 @@ fn parse_api_error(status: reqwest::StatusCode, body: &str) -> Error {
         message: Option<String>,
         error: Option<String>,
     }
-
     let msg = serde_json::from_str::<ApiErr>(body)
         .ok()
         .and_then(|e| e.message.or(e.error))
         .unwrap_or_else(|| body.to_string());
-
-    match status.as_u16() {
-        400 => Error::Auth(msg),
-        401 => Error::Auth(format!("Unauthorized: {}", msg)),
-        403 => Error::PermissionDenied(msg),
-        404 => Error::NotFound(msg),
-        429 => Error::RateLimited,
-        _ => Error::Server(format!("HTTP {}: {}", status, msg)),
-    }
+    Error::from_response(status.as_u16(), msg)
 }
 
 /// Extract `WebAuthnCredential` from an `{ success, data: { ... } }` envelope
@@ -556,5 +546,5 @@ fn parse_credential_response(body: &str) -> Result<WebAuthnCredential, Error> {
     if let Ok(env) = serde_json::from_str::<Envelope>(body) {
         return Ok(env.data);
     }
-    serde_json::from_str::<WebAuthnCredential>(body).map_err(|e| Error::Json(e.to_string()))
+    serde_json::from_str::<WebAuthnCredential>(body).map_err(Error::from)
 }
