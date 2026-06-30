@@ -1997,9 +1997,9 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
- "reqwest",
  "serde",
  "serde_json",
+ "uuid",
  "vaultaris-sdk",
 ]
 
