@@ -97,22 +97,23 @@ async fn main() -> Result<(), vaultaris_sdk::Error> {
     println!();
     println!("=== Flat client API ===");
 
-    let client = VaultarisClient::new(VaultarisConfig::new(BASE_URL).with_api_key(USER_TOKEN))?;
+    let client =
+        VaultarisClient::try_from(VaultarisConfig::new(BASE_URL).with_api_key(USER_TOKEN))?;
 
     // List existing credentials
-    match client.get_webauthn_credentials().await {
+    match client.webauthn_credentials().await {
         Ok(creds) => println!("Registered credentials: {}", creds.len()),
         Err(e) => println!("(expected without server): {e}"),
     }
 
     // Begin registration (returns challenge + options)
-    match client.begin_webauthn_registration().await {
+    match client.webauthn_begin_registration().await {
         Ok(r) => println!("Begin reg challenge_id: {}", r.challenge_id),
         Err(e) => println!("(expected without server): {e}"),
     }
 
     // Begin authentication (returns challenge + allowCredentials)
-    match client.begin_webauthn_authentication().await {
+    match client.webauthn_begin_authentication().await {
         Ok(r) => println!("Begin auth challenge_id: {}", r.challenge_id),
         Err(e) => println!("(expected without server): {e}"),
     }

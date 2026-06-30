@@ -34,9 +34,12 @@ async fn dpop_header_is_attached_to_every_request() {
     let config = VaultarisConfig::new(server.uri())
         .with_api_key("my-access-token")
         .with_dpop_key(key);
-    let client = VaultarisClient::new(config).expect("client builds");
+    let client = VaultarisClient::try_from(config).expect("client builds");
 
-    client.validate_token("opaque").await.expect("call succeeds");
+    client
+        .validate_token("opaque")
+        .await
+        .expect("call succeeds");
 
     // Spot-check: the proof's JWK actually matches the key we configured.
     let recorded = server.received_requests().await.expect("requests");
@@ -117,8 +120,11 @@ async fn custom_dpop_signer_works_end_to_end() {
         fn sign<'a>(
             &'a self,
             message: &'a [u8],
-        ) -> Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, vaultaris_sdk::Error>> + Send + 'a>>
-        {
+        ) -> Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<u8>, vaultaris_sdk::Error>> + Send + 'a,
+            >,
+        > {
             self.calls.fetch_add(1, Ordering::Relaxed);
             self.inner.sign(message)
         }
@@ -149,9 +155,12 @@ async fn custom_dpop_signer_works_end_to_end() {
     let config = vaultaris_sdk::VaultarisConfig::new(server.uri())
         .with_api_key("custom-signer-token")
         .with_dpop_signer(signer);
-    let client = VaultarisClient::new(config).expect("client builds");
+    let client = VaultarisClient::try_from(config).expect("client builds");
 
-    client.validate_token("opaque").await.expect("call succeeds");
+    client
+        .validate_token("opaque")
+        .await
+        .expect("call succeeds");
 
     assert_eq!(
         signer_handle.calls.load(Ordering::Relaxed),
@@ -161,7 +170,42 @@ async fn custom_dpop_signer_works_end_to_end() {
 }
 
 #[tokio::test]
-async fn without_dpop_key_authorization_falls_back_to_bearer() {
+async fn without_dpop_key_authorization_defaults_to_apikey() {
+    let server = MockServer::start().await;
+
+    // Default scheme is now `ApiKey` (Vaultaris extractor accepts only
+    // `ApiKey` / `X-Api-Key`, not `Bearer`).
+    Mock::given(method("POST"))
+        .and(path("/api/v1/integration/token/validate"))
+        .and(header("Authorization", "ApiKey my-access-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "valid": true,
+            "scopes": [],
+            "roles": [],
+            "permissions": [],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = VaultarisConfig::new(server.uri()).with_api_key("my-access-token");
+    let client = VaultarisClient::try_from(config).expect("client builds");
+
+    client
+        .validate_token("opaque")
+        .await
+        .expect("call succeeds");
+
+    let recorded = server.received_requests().await.expect("requests");
+    let req: &Request = recorded.first().expect("one request was made");
+    assert!(
+        req.headers.get("dpop").is_none(),
+        "no DPoP header without a key"
+    );
+}
+
+#[tokio::test]
+async fn bearer_scheme_is_opt_in() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -177,15 +221,13 @@ async fn without_dpop_key_authorization_falls_back_to_bearer() {
         .mount(&server)
         .await;
 
-    let config = VaultarisConfig::new(server.uri()).with_api_key("my-access-token");
-    let client = VaultarisClient::new(config).expect("client builds");
+    let config = VaultarisConfig::new(server.uri())
+        .with_api_key("my-access-token")
+        .with_auth_scheme(vaultaris_sdk::AuthScheme::Bearer);
+    let client = VaultarisClient::try_from(config).expect("client builds");
 
-    client.validate_token("opaque").await.expect("call succeeds");
-
-    let recorded = server.received_requests().await.expect("requests");
-    let req: &Request = recorded.first().expect("one request was made");
-    assert!(
-        req.headers.get("dpop").is_none(),
-        "no DPoP header without a key"
-    );
+    client
+        .validate_token("opaque")
+        .await
+        .expect("call succeeds");
 }

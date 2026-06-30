@@ -22,6 +22,7 @@ use axum::{
     routing::get,
 };
 use serde_json::json;
+use uuid::Uuid;
 use vaultaris_sdk::{Error as VaultarisError, TokenValidation, VaultarisClient};
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ use vaultaris_sdk::{Error as VaultarisError, TokenValidation, VaultarisClient};
 #[derive(Clone)]
 struct AppState {
     vaultaris: Arc<VaultarisClient>,
-    tenant_id: String,
+    tenant_id: Uuid,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ async fn admin_handler(
     ValidatedUser(user): ValidatedUser,
 ) -> Response {
     let user_id = match user.user_id {
-        Some(id) => id.to_string(),
+        Some(id) => id,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -129,7 +130,7 @@ async fn admin_handler(
 
     match state
         .vaultaris
-        .require_permission(&state.tenant_id, &user_id, "users", "manage")
+        .require_permission(state.tenant_id, user_id, "users", "manage")
         .await
     {
         Ok(()) => Json(json!({
@@ -138,7 +139,7 @@ async fn admin_handler(
         }))
         .into_response(),
 
-        Err(VaultarisError::PermissionDenied(_)) => (
+        Err(VaultarisError::PermissionDenied { .. }) => (
             StatusCode::FORBIDDEN,
             Json(json!({ "error": "Insufficient permissions" })),
         )
@@ -159,8 +160,10 @@ async fn admin_handler(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vaultaris = VaultarisClient::from_env()?;
-    let tenant_id = std::env::var("EXAMPLE_TENANT_ID")
-        .unwrap_or_else(|_| "00000000-0000-0000-0000-000000000001".into());
+    let tenant_id = Uuid::parse_str(
+        &std::env::var("EXAMPLE_TENANT_ID")
+            .unwrap_or_else(|_| "00000000-0000-0000-0000-000000000001".into()),
+    )?;
 
     let state = AppState {
         vaultaris: Arc::new(vaultaris),

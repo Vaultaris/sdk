@@ -21,6 +21,7 @@ use axum::{
 };
 use serde_json::json;
 use std::sync::Arc;
+use uuid::Uuid;
 use vaultaris_sdk::{TokenValidation, VaultarisClient, VaultarisConfig};
 
 /// Shared application state
@@ -32,8 +33,8 @@ struct AppState {
 /// User context extracted from token
 #[derive(Clone, Debug)]
 struct AuthenticatedUser {
-    user_id: String,
-    tenant_id: String,
+    user_id: Uuid,
+    tenant_id: Uuid,
     username: String,
     email: String,
     roles: Vec<String>,
@@ -68,16 +69,9 @@ async fn auth_middleware(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Create user context and attach to request extensions
     let user = AuthenticatedUser {
-        user_id: validation
-            .user_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
-        tenant_id: validation
-            .tenant_id
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
+        user_id: validation.user_id.ok_or(StatusCode::UNAUTHORIZED)?,
+        tenant_id: validation.tenant_id.ok_or(StatusCode::UNAUTHORIZED)?,
         username: validation.username.unwrap_or_default(),
         email: validation.email.unwrap_or_default(),
         roles: validation.roles,
@@ -110,10 +104,9 @@ async fn require_permission(
                 .get::<AuthenticatedUser>()
                 .ok_or(StatusCode::UNAUTHORIZED)?;
 
-            // Check permission
             let has_permission = state
                 .vaultaris
-                .check_permission(&user.tenant_id, &user.user_id, resource, action)
+                .check_permission(user.tenant_id, user.user_id, resource, action)
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -167,7 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = VaultarisConfig::new("http://localhost:8080")
         .with_tenant("00000000-0000-0000-0000-000000000001");
 
-    let vaultaris = Arc::new(VaultarisClient::new(config)?);
+    let vaultaris = Arc::new(VaultarisClient::try_from(config)?);
 
     let state = AppState { vaultaris };
 

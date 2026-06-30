@@ -1,46 +1,32 @@
-//! Multi-tenant administration example
-//!
-//! Scenario: A platform admin dashboard that manages multiple customer tenants.
-//! Demonstrates how to:
-//!   - List all tenants
-//!   - Inspect per-tenant statistics and user counts
-//!   - Manage users across tenants
-//!   - Revoke suspicious sessions across a tenant
-//!   - Use the collect_* helpers for full result sets
+//! Multi-tenant admin dashboard — list tenants, inspect stats, audit, sessions.
 //!
 //! Run with:
-//!   VAULTARA_URL=http://localhost:8080 VAULTARA_API_KEY=your-key \
+//!   VAULTARIS_URL=http://localhost:8080 VAULTARIS_API_KEY=your-key \
 //!   cargo run --example multi_tenant_admin
 
-use vaultaris_sdk::VaultarisClient;
+use vaultaris_sdk::{Pagination, StatsQuery, VaultarisClient};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = VaultarisClient::from_env()?;
 
-    // --- 1. List all tenants ---
     println!("=== Tenant Overview ===");
-    let mut page = 1i64;
-    let per_page = 50i64;
+    let mut pagination = Pagination::new(1, 50);
     let mut all_tenants = Vec::new();
-
     loop {
-        let result = client.list_tenants(page, per_page).await?;
+        let result = client.list_tenants(pagination).await?;
         let has_next = result.has_next();
         all_tenants.extend(result.data);
         if !has_next {
             break;
         }
-        page += 1;
+        pagination.page += 1;
     }
-
     println!("Found {} tenant(s):\n", all_tenants.len());
 
     for tenant in &all_tenants {
         println!("  {} / {} ({})", tenant.name, tenant.slug, tenant.id);
-
-        // 2. Per-tenant stats
-        match client.get_tenant_overview(&tenant.id.to_string()).await {
+        match client.tenant_overview(tenant.id).await {
             Ok(stats) => {
                 println!(
                     "     Users: {} active / {} total | Active sessions: {}",
@@ -51,18 +37,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     stats.total_authentications, stats.failed_authentications
                 );
             }
-            Err(e) => println!("     (stats unavailable: {})", e),
+            Err(e) => println!("     (stats unavailable: {e})"),
         }
-
-        // 3. List all users in this tenant
-        match client.collect_users(&tenant.id.to_string()).await {
+        match client.collect_users(tenant.id).await {
             Ok(users) => {
                 println!("     Users collected: {}", users.len());
-
-                // Flag locked-out users
                 let locked: Vec<_> = users.iter().filter(|u| u.locked_until.is_some()).collect();
                 if !locked.is_empty() {
-                    println!("     ⚠ Locked-out accounts ({}):", locked.len());
+                    println!("     Locked-out accounts ({}):", locked.len());
                     for u in &locked {
                         println!(
                             "       - {} ({}) — locked until {:?}",
@@ -71,22 +53,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            Err(e) => println!("     (user list unavailable: {})", e),
+            Err(e) => println!("     (user list unavailable: {e})"),
         }
-
         println!();
     }
 
-    // --- 4. Demonstrate cross-tenant user search by querying a specific tenant ---
     if let Some(first_tenant) = all_tenants.first() {
-        let tid = first_tenant.id.to_string();
+        let tid = first_tenant.id;
         println!(
             "=== Session Management for tenant '{}' ===",
             first_tenant.name
         );
 
-        // List active sessions
-        match client.list_sessions(&tid, 1, 20).await {
+        match client.list_sessions(tid, Pagination::new(1, 20)).await {
             Ok(sessions) => {
                 println!("Active sessions (page 1): {}", sessions.data.len());
                 for s in sessions.data.iter().take(5) {
@@ -99,12 +78,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("  ... and {} more", sessions.total - 20);
                 }
             }
-            Err(e) => println!("  (sessions unavailable: {})", e),
+            Err(e) => println!("  (sessions unavailable: {e})"),
         }
 
-        // 5. Audit log — last 10 entries
         println!("\n=== Audit Log (last 10) ===");
-        match client.list_audit_logs(&tid, 1, 10).await {
+        match client.list_audit_logs(tid, Pagination::new(1, 10)).await {
             Ok(logs) => {
                 for log in &logs.data {
                     println!(
@@ -116,12 +94,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
-            Err(e) => println!("  (audit log unavailable: {})", e),
+            Err(e) => println!("  (audit log unavailable: {e})"),
         }
 
-        // 6. Security stats
-        println!("\n=== Security Stats ===");
-        match client.get_security_stats(&tid).await {
+        println!("\n=== Security Stats (last 7d) ===");
+        match client.security_stats(tid, &StatsQuery::last_7d()).await {
             Ok(s) => {
                 println!("  Blocked attempts:        {}", s.blocked_attempts);
                 println!("  Locked accounts:         {}", s.locked_accounts);
@@ -129,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Password resets:         {}", s.password_resets);
                 println!("  MFA enrollments:         {}", s.mfa_enrollments);
             }
-            Err(e) => println!("  (security stats unavailable: {})", e),
+            Err(e) => println!("  (security stats unavailable: {e})"),
         }
     }
 
