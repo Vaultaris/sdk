@@ -1,0 +1,8 @@
+# Shared HTTP client used by the mini Vaultaris client
+httpx>=0.27
+
+# Framework examples — install only the one you want to run
+fastapi>=0.111
+uvicorn[standard]>=0.30
+flask>=3.0
+django>=5.0
